@@ -18,7 +18,7 @@ pipeline {
             steps {
                 echo "Building backend..."
                 dir('backend') {
-                    sh '''
+                    bat '''
                         python -m pip install --upgrade pip
                         pip install -r requirements.txt
                     '''
@@ -30,9 +30,9 @@ pipeline {
             steps {
                 echo "Building frontend..."
                 dir('my-app') {
-                    sh '''
-                        npm install
-                        npm run build
+                    bat '''
+                        call npm install
+                        call npm run build
                     '''
                 }
             }
@@ -42,10 +42,10 @@ pipeline {
             steps {
                 echo "Running tests..."
                 dir('backend') {
-                    sh 'python -m pytest || true'
+                    bat 'python -m pytest || exit /b 0'
                 }
                 dir('my-app') {
-                    sh 'npm test -- --watch=false || true'
+                    bat 'call npm test -- --watch=false || exit /b 0'
                 }
             }
         }
@@ -53,15 +53,15 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 echo "Building Docker images..."
-                sh 'docker-compose build'
+                bat 'docker-compose build'
             }
         }
         
         stage('Deploy') {
             steps {
                 echo "Deploying with Docker Compose..."
-                sh '''
-                    docker-compose down || true
+                bat '''
+                    docker-compose down || exit /b 0
                     docker-compose up -d
                 '''
             }
