@@ -14,21 +14,10 @@ pipeline {
             }
         }
         
-        stage('Build Backend') {
+        stage('Build Docker Images') {
             steps {
-                echo "Building backend..."
-                sh '''
-                    docker-compose run --rm backend sh -c "python -m pip install --upgrade pip && pip install -r requirements.txt"
-                '''
-            }
-        }
-        
-        stage('Build Frontend') {
-            steps {
-                echo "Building frontend..."
-                sh '''
-                    docker-compose run --rm frontend sh -c "npm install && npm run build"
-                '''
+                echo "Building Docker images..."
+                sh 'docker-compose build'
             }
         }
         
@@ -37,13 +26,6 @@ pipeline {
                 echo "Running tests..."
                 sh 'docker-compose run --rm backend python -m pytest || true'
                 sh 'docker-compose run --rm frontend npm test -- --watch=false || true'
-            }
-        }
-        
-        stage('Build Docker Images') {
-            steps {
-                echo "Building Docker images..."
-                sh 'docker-compose build'
             }
         }
         
