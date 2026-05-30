@@ -17,36 +17,26 @@ pipeline {
         stage('Build Backend') {
             steps {
                 echo "Building backend..."
-                dir('backend') {
-                    sh '''
-                        python -m pip install --upgrade pip
-                        pip install -r requirements.txt
-                    '''
-                }
+                sh '''
+                    docker-compose run --rm backend sh -c "python -m pip install --upgrade pip && pip install -r requirements.txt"
+                '''
             }
         }
         
         stage('Build Frontend') {
             steps {
                 echo "Building frontend..."
-                dir('my-app') {
-                    sh '''
-                        npm install
-                        npm run build
-                    '''
-                }
+                sh '''
+                    docker-compose run --rm frontend sh -c "npm install && npm run build"
+                '''
             }
         }
         
         stage('Run Tests') {
             steps {
                 echo "Running tests..."
-                dir('backend') {
-                    sh 'python -m pytest || true'
-                }
-                dir('my-app') {
-                    sh 'npm test -- --watch=false || true'
-                }
+                sh 'docker-compose run --rm backend python -m pytest || true'
+                sh 'docker-compose run --rm frontend npm test -- --watch=false || true'
             }
         }
         
