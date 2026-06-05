@@ -33,9 +33,9 @@ pipeline {
             steps {
                 echo "Deploying with Docker Compose..."
                 sh '''
-                    # Clean up test containers
+                    # Clean up only test containers
                     docker-compose -p studentsystem-test down || true
-                    # Deploy production stack (use default project name)
+                    # Update and restart services (no downtime)
                     docker-compose -p studentsystem up -d
                 '''
             }
