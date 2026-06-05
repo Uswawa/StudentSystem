@@ -11,15 +11,6 @@ RUN apt-get update && apt-get install -y \
 # Add jenkins user to docker group
 RUN usermod -aG docker jenkins
 
-# Create entrypoint script to fix docker socket permissions
-RUN echo '#!/bin/bash\n\
-if [ -S /var/run/docker.sock ]; then\n\
-  chgrp docker /var/run/docker.sock\n\
-  chmod g+w /var/run/docker.sock\n\
-fi\n\
-exec "$@"' > /usr/local/bin/entrypoint.sh && \
-    chmod +x /usr/local/bin/entrypoint.sh
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# Jenkins will use the docker group directly, socket permissions should be set on host
 
 USER jenkins
