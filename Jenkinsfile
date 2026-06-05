@@ -26,18 +26,7 @@ pipeline {
                 echo "Running tests..."
                 sh 'docker-compose -p studentsystem-test run --rm backend python -m pytest || true'
                 sh 'docker-compose -p studentsystem-test run --rm frontend npm test -- --watch=false || true'
-            }
-        }
-        
-        stage('Deploy') {
-            steps {
-                echo "Deploying with Docker Compose..."
-                sh '''
-                    # Clean up only test containers
-                    docker-compose -p studentsystem-test down || true
-                    # Update and restart services (no downtime)
-                    docker-compose -p studentsystem up -d
-                '''
+                sh 'docker-compose -p studentsystem-test down || true'
             }
         }
     }
