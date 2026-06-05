@@ -24,8 +24,8 @@ pipeline {
         stage('Run Tests') {
             steps {
                 echo "Running tests..."
-                sh 'docker-compose run --rm backend python -m pytest || true'
-                sh 'docker-compose run --rm frontend npm test -- --watch=false || true'
+                sh 'docker-compose -p studentsystem-test run --rm backend python -m pytest || true'
+                sh 'docker-compose -p studentsystem-test run --rm frontend npm test -- --watch=false || true'
             }
         }
         
@@ -33,8 +33,10 @@ pipeline {
             steps {
                 echo "Deploying with Docker Compose..."
                 sh '''
-                    docker-compose down || true
-                    docker-compose up -d
+                    # Clean up test containers
+                    docker-compose -p studentsystem-test down || true
+                    # Deploy production stack (use default project name)
+                    docker-compose -p studentsystem up -d
                 '''
             }
         }
