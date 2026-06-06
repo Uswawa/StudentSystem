@@ -265,7 +265,7 @@ jobs:
   deploy-staging:
     needs: [build-and-test, lint-backend, lint-frontend, security-scan, build-and-push-images]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && secrets.STAGING_HOST != 'localhost' && secrets.STAGING_HOST != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     environment:
       name: staging
     
