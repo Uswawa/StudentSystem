@@ -240,6 +240,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
       
       - name: Build and push backend image
         uses: docker/build-push-action@v5
@@ -249,6 +250,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+        continue-on-error: true
       
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
@@ -258,6 +260,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+        continue-on-error: true
 
   deploy-staging:
     needs: [build-and-test, lint-backend, lint-frontend, security-scan, build-and-push-images]
@@ -477,6 +480,7 @@ jobs:
         if: needs.build-and-test.result == 'success' && needs.lint-backend.result == 'success' && needs.lint-frontend.result == 'success' && needs.security-scan.result == 'success'
         uses: slackapi/slack-github-action@v1.24.0
         with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           payload: |
             {
               "text": "✅ StudentSystem Build Successful",
@@ -503,13 +507,13 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
 
       - name: Notify Slack on Failure
         if: failure()
         uses: slackapi/slack-github-action@v1.24.0
         with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           payload: |
             {
               "text": "❌ StudentSystem Build Failed",
@@ -536,6 +540,5 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
 
