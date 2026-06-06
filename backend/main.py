@@ -1,10 +1,13 @@
+# Load environment variables FIRST, before any other imports
+from dotenv import load_dotenv
+load_dotenv()
+
 import time
 import random
 import string
 from datetime import datetime, timedelta
 from typing import Optional
 from os import getenv
-from dotenv import load_dotenv
 import jwt
 import bcrypt
 from functools import wraps
@@ -23,9 +26,6 @@ from email_service import generate_verification_code, send_verification_email
 from database import engine, Base, get_db, StudentDB, UserDB, UserRole
 from otp import send_otp, verify_otp, get_otp_user_id, clear_otp
 from recaptcha import verify_recaptcha, is_recaptcha_configured
-
-# Load environment variables
-load_dotenv()
 
 # JWT Configuration
 SECRET_KEY = getenv("SECRET_KEY", "your-secret-key-change-in-production")
@@ -301,16 +301,23 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         # Generate verification code first
         code = generate_verification_code()
         
+        # DEBUG: Log before sending email
+        print(f"[SIGNUP] About to send verification email to {request.email}")
+        print(f"[SIGNUP] Custom gmail_email: {request.gmail_email}")
+        print(f"[SIGNUP] Custom gmail_password: {bool(request.gmail_password)}")
+        
         # Try to send verification email. In local Docker development, SMTP may
         # be intentionally unconfigured, so signup still proceeds and returns
         # the code in the response.
         email_sent = send_verification_email(request.email, code, request.gmail_email, request.gmail_password)
         
-        # Map string role to UserRole enum
+        print(f"[SIGNUP] Email sent result: {email_sent}")
+        
+        # Map string role to UserRole enum value
         role_map = {
-            "admin": UserRole.ADMIN,
-            "registrar": UserRole.REGISTRAR,
-            "student": UserRole.STUDENT
+            "admin": UserRole.ADMIN.value,
+            "registrar": UserRole.REGISTRAR.value,
+            "student": UserRole.STUDENT.value
         }
         
         user = UserDB(
@@ -332,14 +339,15 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         }
         
         response = {
-            "message": "User created successfully. Verification code sent to email."
-            if email_sent
-            else "User created successfully. Email is not configured, so use the verification code shown here.",
+            "message": "User created successfully. Verification code sent to email.",
             "user_id": user.id,
-            "role": user.role.value,
-            "email_sent": email_sent,
-            "verification_code": code  # Always include code for development/testing
+            "role": user.role,
+            "email_sent": email_sent
         }
+        # Only include code in response if email failed (for development/debugging)
+        if not email_sent:
+            response["verification_code"] = code
+            response["message"] = "User created. Email service not available, use code shown here for verification."
         return response
     except HTTPException:
         raise
@@ -475,7 +483,7 @@ def verify_otp_endpoint(request: VerifyOTPRequest, db: Session = Depends(get_db)
         access_token = create_access_token(
             data={
                 "sub": user.email,
-                "role": user.role.value,
+                "role": user.role,
                 "user_id": user.id,
                 "first_name": user.first_name,
                 "last_name": user.last_name
@@ -489,7 +497,7 @@ def verify_otp_endpoint(request: VerifyOTPRequest, db: Session = Depends(get_db)
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "role": user.role.value,
+            "role": user.role,
             "access_token": access_token,
             "token_type": "bearer"
         }
@@ -520,10 +528,10 @@ def admin_signup(request: AdminSignupRequest, db: Session = Depends(get_db)):
         if get_user_by_email(request.email, db):
             raise HTTPException(status_code=400, detail="Email already registered")
         
-        # Map string role to UserRole enum
+        # Map string role to UserRole enum value
         role_map = {
-            "admin": UserRole.ADMIN,
-            "registrar": UserRole.REGISTRAR,
+            "admin": UserRole.ADMIN.value,
+            "registrar": UserRole.REGISTRAR.value,
         }
         
         # Create admin/registrar user (auto-verified)
@@ -542,7 +550,7 @@ def admin_signup(request: AdminSignupRequest, db: Session = Depends(get_db)):
         return {
             "message": f"{request.role.capitalize()} account created successfully!",
             "user_id": user.id,
-            "role": user.role.value,
+            "role": user.role,
             "email": user.email
         }
     except HTTPException:

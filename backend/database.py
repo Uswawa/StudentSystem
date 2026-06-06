@@ -1,6 +1,6 @@
 import os
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, Enum
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -12,13 +12,17 @@ class UserRole(PyEnum):
     REGISTRAR = "registrar"
     STUDENT = "student"
 
-# PostgreSQL database URL
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://student_user:student_password@postgres:5432/student_system")
+# Database URL (SQLite for local, PostgreSQL for Docker)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./student_system.db")
 
-# Create engine
-engine = create_engine(
-    DATABASE_URL
-)
+# Create engine with SQLite-specific settings
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False}
+    )
+else:
+    engine = create_engine(DATABASE_URL)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -50,7 +54,7 @@ class UserDB(Base):
     email = Column(String, unique=True, index=True)
     password = Column(String)
     is_verified = Column(Boolean, default=False)
-    role = Column(Enum(UserRole), default=UserRole.STUDENT)
+    role = Column(String, default=UserRole.STUDENT.value)  # Store as string for SQLite compatibility
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

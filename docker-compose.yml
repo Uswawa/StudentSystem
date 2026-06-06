@@ -1,26 +1,4 @@
 services:
-  postgres:
-    image: postgres:18-alpine
-    container_name: studentsystem-postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-      POSTGRES_INITDB_ARGS: "-c max_connections=200"
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql
-      - ./backend/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-    networks:
-      - studentsystem-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   frontend:
     build:
       context: ./my-app
@@ -48,20 +26,17 @@ services:
     container_name: studentsystem-backend
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://postgres:postgres@studentsystem-postgres:5432/postgres
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
-      - ADMIN_SECRET=${ADMIN_SECRET:-admin-secret-key}
-      - GMAIL_USER=${GMAIL_USER:-your-email@gmail.com}
-      - GMAIL_PASSWORD=${GMAIL_PASSWORD:-your-app-password}
-      - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY:-dummy-key}
-      - VERIFICATION_CODE_EXPIRY_MINUTES=${VERIFICATION_CODE_EXPIRY_MINUTES:-10}
+      - DATABASE_URL=sqlite:///./student_system.db
+      - USERS_DATABASE_URL=postgresql://users_user:users_password@users-postgres:5432/users_db
+    networks:
+      - studentsystem-network
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - studentsystem-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8000/', timeout=5).read()"]
@@ -69,6 +44,29 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: users-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_INITDB_ARGS=-U postgres
+    volumes:
+      - ./backend/init-users.sql:/docker-entrypoint-initdb.d/01-init-users.sql
+      - ./backend/pg_hba.conf:/var/lib/postgresql/pg_hba.conf
+      - postgres-storage:/var/lib/postgresql/data
+    networks:
+      - studentsystem-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   prometheus:
     image: prom/prometheus:latest
@@ -128,7 +126,7 @@ services:
       start_period: 60s
 
 volumes:
-  postgres-data:
+  postgres-storage:
   prometheus-storage:
   grafana-storage:
   jenkins-data:

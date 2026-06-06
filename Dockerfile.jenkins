@@ -8,9 +8,14 @@ RUN apt-get update && apt-get install -y \
     docker-compose \
     && rm -rf /var/lib/apt/lists/*
 
-# Add jenkins user to docker group
-RUN usermod -aG docker jenkins
+# Run Jenkins as root to access Docker socket (safe in container)
+# This is necessary for Docker-in-Docker on Windows
+ENV JENKINS_USER=root
 
-# Jenkins will use the docker group directly, socket permissions should be set on host
-
-USER jenkins
+# Install essential plugins
+RUN jenkins-plugin-cli --plugins \
+    pipeline-model-definition \
+    pipeline-stage-view \
+    git \
+    github \
+    docker-workflow
