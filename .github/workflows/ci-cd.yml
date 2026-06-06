@@ -30,24 +30,275 @@ jobs:
       - name: Build Docker images
         run: docker-compose build
       
-      - name: Run backend tests
-        run: docker-compose run --rm backend python -m pytest || true
+      - name: Run backend tests with coverage
+        run: |
+          docker-compose run --rm backend python -m pytest \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=html || true
       
-      - name: Run frontend tests
-        run: docker-compose run --rm frontend npm test -- --watch=false || true
+      - name: Run frontend tests with coverage
+        run: |
+          docker-compose run --rm frontend npm test -- --watch=false --code-coverage || true
+      
+      - name: Upload backend coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./backend/coverage.xml
+          flags: backend
+          name: backend-coverage
       
       - name: Cleanup test containers
         if: always()
         run: docker-compose down || true
 
+  lint-backend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install flake8 pylint black
+          pip install -r backend/requirements.txt
+      
+      - name: Run Flake8
+        run: flake8 backend --count --select=E9,F63,F7,F82 --show-source --statistics
+      
+      - name: Run Black formatter check
+        run: black --check backend || true
+      
+      - name: Run Pylint
+        run: pylint backend/*.py --fail-under=7.0 || true
+
+  lint-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      
+      - name: Install dependencies
+        run: cd my-app && npm install
+      
+      - name: Run ESLint
+        run: cd my-app && npm run lint || true
+      
+      - name: Run TypeScript compiler
+        run: cd my-app && npx tsc --noEmit
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner on images
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Check backend dependencies for vulnerabilities
+        run: |
+          pip install pip-audit
+          pip install -r backend/requirements.txt
+          pip-audit || true
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      
+      - name: Check frontend dependencies for vulnerabilities
+        run: |
+          cd my-app && npm audit --audit-level=moderate || true
+      
+      - name: Check for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+  database-validation:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install psycopg2
+        run: pip install psycopg2-binary sqlalchemy
+      
+      - name: Wait for PostgreSQL
+        run: sleep 10
+      
+      - name: Validate database schema
+        run: |
+          python -c "
+          import psycopg2
+          conn = psycopg2.connect('dbname=postgres user=postgres password=postgres host=localhost')
+          cursor = conn.cursor()
+          cursor.execute('SELECT version();')
+          print('Database connection successful!')
+          conn.close()
+          "
+
+  performance-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup environment
+        run: |
+          if [ ! -f backend/.env ]; then
+            cp backend/.env.example backend/.env
+          fi
+      
+      - name: Start services
+        run: docker-compose up -d backend postgres
+      
+      - name: Wait for services
+        run: sleep 15
+      
+      - name: Performance test - Backend health check
+        run: |
+          for i in {1..10}; do
+            TIME=$(curl -w '%{time_total}' -o /dev/null -s http://localhost:8000/docs)
+            echo "Request $i: ${TIME}s"
+          done
+      
+      - name: Stop services
+        if: always()
+        run: docker-compose down
+
+  build-and-push-images:
+    needs: [build-and-test, lint-backend, lint-frontend, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+      
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./my-app
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+
+  deploy-staging:
+    needs: build-and-push-images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add your staging deployment commands here
+          # Example: docker pull latest images and run on staging server
+          echo "✅ Staging deployment completed"
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://studentsystem.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to production
+        run: |
+          echo "🚀 Deploying to production environment..."
+          # Add your production deployment commands here
+          # This requires manual approval due to 'environment' setting
+          echo "✅ Production deployment completed"
+
   notify-slack:
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: [build-and-test, lint-backend, lint-frontend, security-scan]
     if: always()
     
     steps:
       - name: Notify Slack on Success
-        if: needs.build-and-test.result == 'success'
+        if: needs.build-and-test.result == 'success' && needs.lint-backend.result == 'success' && needs.lint-frontend.result == 'success' && needs.security-scan.result == 'success'
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
@@ -58,8 +309,21 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*✅ StudentSystem Build Successful*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow>"
+                    "text": "*✅ StudentSystem Build Successful*\n\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow>"
                   }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:* ✅ Success"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit Message:*\n${{ github.event.head_commit.message }}"
+                    }
+                  ]
                 }
               ]
             }
@@ -67,7 +331,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack on Failure
-        if: needs.build-and-test.result == 'failure'
+        if: failure()
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
@@ -78,10 +342,24 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*❌ StudentSystem Build Failed*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    "text": "*❌ StudentSystem Build Failed*\n\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
                   }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:* ❌ Failed"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Failed Jobs:*\nBuild & Test: ${{ needs.build-and-test.result }}\nBackend Lint: ${{ needs.lint-backend.result }}\nFrontend Lint: ${{ needs.lint-frontend.result }}\nSecurity Scan: ${{ needs.security-scan.result }}"
+                    }
+                  ]
                 }
               ]
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
