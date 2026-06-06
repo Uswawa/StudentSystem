@@ -15,6 +15,21 @@ pipeline {
             }
         }
         
+        stage('Setup Environment') {
+            steps {
+                echo "Setting up environment files..."
+                sh '''
+                    # Create .env file from .env.example if it doesn't exist
+                    if [ ! -f backend/.env ]; then
+                        echo "Creating .env from .env.example..."
+                        cp backend/.env.example backend/.env
+                        # For CI/CD, we can use default values - in production, set actual values in Jenkins credentials
+                        echo "Note: Using .env.example values. Update with actual credentials in Jenkins if needed."
+                    fi
+                '''
+            }
+        }
+        
         stage('Build Docker Images') {
             steps {
                 echo "Building Docker images..."
