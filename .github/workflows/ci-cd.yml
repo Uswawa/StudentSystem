@@ -262,7 +262,6 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     environment:
       name: staging
-      url: http://${{ secrets.STAGING_HOST }}:4200
     
     steps:
       - name: Checkout code
@@ -332,7 +331,6 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: http://${{ secrets.PRODUCTION_HOST }}:4200
     
     steps:
       - name: Checkout code
