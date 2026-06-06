@@ -62,9 +62,71 @@ pipeline {
     post {
         success {
             echo '✅ Build successful!'
+            withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK')]) {
+                sh '''
+                curl -X POST $SLACK_WEBHOOK \
+                -H 'Content-type: application/json' \
+                -d '{
+                    "text": "✅ StudentSystem Build Successful",
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "*✅ StudentSystem Build Successful*\nBuild #'$BUILD_NUMBER'\n<'$BUILD_URL'|View Pipeline>"
+                            }
+                        },
+                        {
+                            "type": "section",
+                            "fields": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Status:*\nSuccess"
+                                },
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Branch:*\nmain"
+                                }
+                            ]
+                        }
+                    ]
+                }'
+                '''
+            }
         }
         failure {
             echo '❌ Build failed!'
+            withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK')]) {
+                sh '''
+                curl -X POST $SLACK_WEBHOOK \
+                -H 'Content-type: application/json' \
+                -d '{
+                    "text": "❌ StudentSystem Build Failed",
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "*❌ StudentSystem Build Failed*\nBuild #'$BUILD_NUMBER'\n<'$BUILD_URL'|View Logs>"
+                            }
+                        },
+                        {
+                            "type": "section",
+                            "fields": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Status:*\nFailed"
+                                },
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "*Branch:*\nmain"
+                                }
+                            ]
+                        }
+                    ]
+                }'
+                '''
+            }
         }
         always {
             echo 'Pipeline execution completed.'
