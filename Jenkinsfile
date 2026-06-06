@@ -11,26 +11,7 @@ pipeline {
             steps {
                 echo "Checking out code..."
                 checkout scm
-                script {
-                    withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK')]) {
-                        sh '''
-                        curl -X POST $SLACK_WEBHOOK \
-                        -H 'Content-type: application/json' \
-                        -d '{
-                            "text": "🚀 Build Started",
-                            "blocks": [
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": "*StudentSystem Pipeline Started*\nBuild #'$BUILD_NUMBER'"
-                                    }
-                                }
-                            ]
-                        }'
-                        '''
-                    }
-                }
+                echo "✓ Code checked out successfully"
             }
         }
         
@@ -65,46 +46,10 @@ pipeline {
     
     post {
         success {
-            echo '✓ Build successful!'
-            withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK')]) {
-                sh '''
-                curl -X POST $SLACK_WEBHOOK \
-                -H 'Content-type: application/json' \
-                -d '{
-                    "text": "✅ Build Successful",
-                    "blocks": [
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": "*✅ StudentSystem Build Successful*\nBuild #'$BUILD_NUMBER'\n<'$BUILD_URL'|View Pipeline>"
-                            }
-                        }
-                    ]
-                }'
-                '''
-            }
+            echo '✅ Build successful!'
         }
         failure {
-            echo '✗ Build failed!'
-            withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK')]) {
-                sh '''
-                curl -X POST $SLACK_WEBHOOK \
-                -H 'Content-type: application/json' \
-                -d '{
-                    "text": "❌ Build Failed",
-                    "blocks": [
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": "*❌ StudentSystem Build Failed*\nBuild #'$BUILD_NUMBER'\n<'$BUILD_URL'|View Logs>"
-                            }
-                        }
-                    ]
-                }'
-                '''
-            }
+            echo '❌ Build failed!'
         }
         always {
             echo 'Pipeline execution completed.'
