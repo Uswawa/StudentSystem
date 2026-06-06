@@ -265,7 +265,7 @@ jobs:
   deploy-staging:
     needs: [build-and-test, lint-backend, lint-frontend, security-scan, build-and-push-images]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && secrets.STAGING_HOST != 'localhost' && secrets.STAGING_HOST != ''
     environment:
       name: staging
     
@@ -315,6 +315,7 @@ jobs:
         if: success()
         uses: slackapi/slack-github-action@v1.24.0
         with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           payload: |
             {
               "text": "🚀 Staging Deployment Successful",
@@ -328,15 +329,15 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
 
   deploy-production:
     needs: [build-and-test, lint-backend, lint-frontend, security-scan, build-and-push-images]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.PRODUCTION_HOST != 'localhost' && secrets.PRODUCTION_HOST != ''
     environment:
       name: production
+      url: https://${{ secrets.PRODUCTION_HOST }}
     
     steps:
       - name: Checkout code
@@ -434,6 +435,7 @@ jobs:
         if: success()
         uses: slackapi/slack-github-action@v1.24.0
         with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           payload: |
             {
               "text": "🎉 Production Deployment Successful",
@@ -447,13 +449,13 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
       
       - name: Notify Slack - Production Deployment Failed
         if: failure()
         uses: slackapi/slack-github-action@v1.24.0
         with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           payload: |
             {
               "text": "⚠️ Production Deployment Failed - Rollback Initiated",
@@ -467,8 +469,7 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
 
   notify-slack:
     runs-on: ubuntu-latest
