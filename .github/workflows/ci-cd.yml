@@ -226,7 +226,7 @@ jobs:
   build-and-push-images:
     needs: [build-and-test, lint-backend, lint-frontend, security-scan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     
     steps:
       - name: Checkout code
