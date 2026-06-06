@@ -334,7 +334,7 @@ jobs:
   deploy-production:
     needs: [build-and-test, lint-backend, lint-frontend, security-scan, build-and-push-images]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.PRODUCTION_HOST != 'localhost' && secrets.PRODUCTION_HOST != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
       url: https://${{ secrets.PRODUCTION_HOST }}
