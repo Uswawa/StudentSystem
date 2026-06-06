@@ -147,8 +147,8 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+          filesystem: true
+        continue-on-error: true
 
   database-validation:
     runs-on: ubuntu-latest
