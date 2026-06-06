@@ -257,39 +257,214 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
 
   deploy-staging:
-    needs: build-and-push-images
+    needs: [build-and-test, lint-backend, lint-frontend, security-scan, build-and-push-images]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: http://${{ secrets.STAGING_HOST }}:4200
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Deploy to staging
+      - name: Deploy to Staging via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            
+            echo "📥 Pulling latest images..."
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
+            
+            echo "🔄 Restarting services..."
+            docker-compose -f docker-compose.yml pull backend frontend
+            docker-compose -f docker-compose.yml up -d backend frontend postgres
+            
+            echo "⏳ Waiting for services to be healthy..."
+            sleep 10
+            
+            echo "✅ Staging deployment completed"
+      
+      - name: Health Check
         run: |
-          echo "Deploying to staging environment..."
-          # Add your staging deployment commands here
-          # Example: docker pull latest images and run on staging server
-          echo "✅ Staging deployment completed"
+          echo "🏥 Running health checks..."
+          sleep 5
+          for i in {1..5}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.STAGING_HOST }}:8000/docs)
+            if [ $STATUS -eq 200 ]; then
+              echo "✅ Backend is healthy (HTTP $STATUS)"
+              break
+            else
+              echo "⏳ Attempt $i: Backend responded with HTTP $STATUS"
+              sleep 3
+            fi
+          done
+      
+      - name: Notify Slack - Staging Deployment
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "🚀 Staging Deployment Successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🚀 Staging Deployment Successful*\n*Branch:* develop\n*Host:* ${{ secrets.STAGING_HOST }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deployment>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
   deploy-production:
-    needs: deploy-staging
+    needs: [build-and-test, lint-backend, lint-frontend, security-scan, build-and-push-images]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: https://studentsystem.example.com
+      url: http://${{ secrets.PRODUCTION_HOST }}:4200
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Deploy to production
+      - name: Create backup before deployment
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            
+            echo "💾 Creating backup..."
+            BACKUP_DIR="backups/backup-$(date +%Y%m%d-%H%M%S)"
+            mkdir -p $BACKUP_DIR
+            
+            # Backup current docker-compose state
+            docker-compose ps > $BACKUP_DIR/container-state.txt
+            docker images > $BACKUP_DIR/images.txt
+            
+            echo "✅ Backup created at $BACKUP_DIR"
+      
+      - name: Deploy to Production via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            
+            echo "📥 Pulling latest production images..."
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
+            
+            echo "🔄 Updating services..."
+            docker-compose -f docker-compose.yml pull backend frontend
+            docker-compose -f docker-compose.yml up -d backend frontend postgres
+            
+            echo "⏳ Waiting for services to stabilize..."
+            sleep 15
+            
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f --filter "dangling=true"
+            
+            echo "✅ Production deployment completed"
+      
+      - name: Health Check Production
         run: |
-          echo "🚀 Deploying to production environment..."
-          # Add your production deployment commands here
-          # This requires manual approval due to 'environment' setting
-          echo "✅ Production deployment completed"
+          echo "🏥 Running production health checks..."
+          sleep 5
+          
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.PRODUCTION_HOST }}:8000/docs)
+            if [ $STATUS -eq 200 ]; then
+              echo "✅ Production Backend is healthy (HTTP $STATUS)"
+              exit 0
+            else
+              echo "⏳ Attempt $i: Production backend responded with HTTP $STATUS"
+              sleep 3
+            fi
+          done
+          
+          echo "❌ Production health check failed"
+          exit 1
+      
+      - name: Rollback on Failure
+        if: failure()
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            
+            echo "⚠️ Deployment failed, attempting rollback..."
+            docker-compose -f docker-compose.yml restart backend frontend
+            sleep 10
+            
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/docs)
+            if [ $STATUS -eq 200 ]; then
+              echo "✅ Rollback successful"
+            else
+              echo "❌ Rollback failed - manual intervention required!"
+              exit 1
+            fi
+      
+      - name: Notify Slack - Production Deployment Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "🎉 Production Deployment Successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🎉 Production Deployment Successful*\n*Branch:* main\n*Host:* ${{ secrets.PRODUCTION_HOST }}\n*Commit:* `${{ github.sha }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deployment>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      
+      - name: Notify Slack - Production Deployment Failed
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "⚠️ Production Deployment Failed - Rollback Initiated",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*⚠️ Production Deployment Failed*\n*Status:* Rollback initiated\n*Host:* ${{ secrets.PRODUCTION_HOST }}\n*Branch:* main\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
   notify-slack:
     runs-on: ubuntu-latest
