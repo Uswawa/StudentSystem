@@ -28,18 +28,18 @@ jobs:
           fi
       
       - name: Build Docker images
-        run: docker-compose build
+        run: docker compose build
       
       - name: Run backend tests with coverage
         run: |
-          docker-compose run --rm backend python -m pytest \
+          docker compose run --rm backend python -m pytest \
             --cov=. \
             --cov-report=xml \
             --cov-report=html || true
       
       - name: Run frontend tests with coverage
         run: |
-          docker-compose run --rm frontend npm test -- --watch=false --code-coverage || true
+          docker compose run --rm frontend npm test -- --watch=false --code-coverage || true
       
       - name: Upload backend coverage to Codecov
         uses: codecov/codecov-action@v3
@@ -50,7 +50,7 @@ jobs:
       
       - name: Cleanup test containers
         if: always()
-        run: docker-compose down || true
+        run: docker compose down || true
 
   lint-backend:
     runs-on: ubuntu-latest
@@ -204,7 +204,7 @@ jobs:
           fi
       
       - name: Start services
-        run: docker-compose up -d backend postgres
+        run: docker compose up -d backend postgres
       
       - name: Wait for services
         run: sleep 15
@@ -218,7 +218,7 @@ jobs:
       
       - name: Stop services
         if: always()
-        run: docker-compose down
+        run: docker compose down
 
   build-and-push-images:
     needs: [build-and-test, lint-backend, lint-frontend, security-scan]
@@ -282,8 +282,8 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
             
             echo "🔄 Restarting services..."
-            docker-compose -f docker-compose.yml pull backend frontend
-            docker-compose -f docker-compose.yml up -d backend frontend postgres
+            docker compose -f docker-compose.yml pull backend frontend
+            docker compose -f docker-compose.yml up -d backend frontend postgres
             
             echo "⏳ Waiting for services to be healthy..."
             sleep 10
@@ -350,8 +350,8 @@ jobs:
             BACKUP_DIR="backups/backup-$(date +%Y%m%d-%H%M%S)"
             mkdir -p $BACKUP_DIR
             
-            # Backup current docker-compose state
-            docker-compose ps > $BACKUP_DIR/container-state.txt
+            # Backup current docker compose state
+            docker compose ps > $BACKUP_DIR/container-state.txt
             docker images > $BACKUP_DIR/images.txt
             
             echo "✅ Backup created at $BACKUP_DIR"
@@ -371,8 +371,8 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
             
             echo "🔄 Updating services..."
-            docker-compose -f docker-compose.yml pull backend frontend
-            docker-compose -f docker-compose.yml up -d backend frontend postgres
+            docker compose -f docker-compose.yml pull backend frontend
+            docker compose -f docker-compose.yml up -d backend frontend postgres
             
             echo "⏳ Waiting for services to stabilize..."
             sleep 15
@@ -413,7 +413,7 @@ jobs:
             cd ${{ secrets.DEPLOY_PATH }}
             
             echo "⚠️ Deployment failed, attempting rollback..."
-            docker-compose -f docker-compose.yml restart backend frontend
+            docker compose -f docker-compose.yml restart backend frontend
             sleep 10
             
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/docs)
